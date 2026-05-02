@@ -1,0 +1,80 @@
+export const bluebikeStations = [
+  {
+    id: 'bu-west-station',
+    name: 'BU West / Babcock St',
+    lat: 42.3522,
+    lng: -71.1212,
+  },
+  {
+    id: 'allston-harvard-station',
+    name: 'Harvard Ave / Comm Ave',
+    lat: 42.3508,
+    lng: -71.1311,
+  },
+  {
+    id: 'kenmore-station',
+    name: 'Kenmore Square',
+    lat: 42.3489,
+    lng: -71.0951,
+  },
+  {
+    id: 'back-bay-station',
+    name: 'Dartmouth St / Copley',
+    lat: 42.3499,
+    lng: -71.0778,
+  },
+  {
+    id: 'charles-mgh-station',
+    name: 'Charles / MGH',
+    lat: 42.3612,
+    lng: -71.0696,
+  },
+  {
+    id: 'harvard-square-station',
+    name: 'Harvard Square Plaza',
+    lat: 42.373,
+    lng: -71.1207,
+  },
+  {
+    id: 'union-square-station',
+    name: 'Union Square Somerville',
+    lat: 42.3795,
+    lng: -71.0952,
+  },
+  {
+    id: 'north-end-station',
+    name: 'North End / Commercial St',
+    lat: 42.3647,
+    lng: -71.0528,
+  },
+  {
+    id: 'downtown-station',
+    name: 'Downtown Crossing',
+    lat: 42.3554,
+    lng: -71.0608,
+  },
+  {
+    id: 'chinatown-station',
+    name: 'Chinatown Gate Plaza',
+    lat: 42.3513,
+    lng: -71.0609,
+  },
+  {
+    id: 'seaport-station',
+    name: 'Seaport Blvd / Sleeper St',
+    lat: 42.3515,
+    lng: -71.0451,
+  },
+  {
+    id: 'south-boston-station',
+    name: 'Broadway T / South Boston',
+    lat: 42.3427,
+    lng: -71.0567,
+  },
+  {
+    id: 'east-boston-station',
+    name: 'Maverick Square',
+    lat: 42.3693,
+    lng: -71.0396,
+  },
+]
