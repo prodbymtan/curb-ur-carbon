@@ -5,91 +5,81 @@ import {
   priorityPresets,
   stayDurations,
 } from './data/places.js'
+import { fetchPointToPointCommute } from './lib/commuteApi.js'
 import {
-  estimateCommute,
   formatCarbon,
   formatCurrency,
   formatMinutes,
 } from './lib/commute.js'
-import { fetchBluebikesFromAppApi } from './lib/bluebikesApi.js'
 import styles from './App.module.css'
 
 const defaultState = {
-  originId: 'east-boston',
-  destinationId: 'roxbury',
+  originQuery: 'Maverick Square, Boston, MA',
+  destinationQuery: 'Nubian Square, Boston, MA',
   departureId: 'morning',
   stayId: 'standard',
   priorityId: 'balanced',
 }
 
+const sampleTrips = [
+  {
+    id: 'east-to-roxbury',
+    label: 'Maverick -> Nubian',
+    originQuery: 'Maverick Square, Boston, MA',
+    destinationQuery: 'Nubian Square, Boston, MA',
+  },
+  {
+    id: 'bu-to-north-end',
+    label: 'BU -> North End',
+    originQuery: 'Boston University West Campus, Boston, MA',
+    destinationQuery: 'North End, Boston, MA',
+  },
+  {
+    id: 'harvard-to-seaport',
+    label: 'Harvard -> Seaport',
+    originQuery: 'Harvard Square, Cambridge, MA',
+    destinationQuery: 'Seaport Boulevard, Boston, MA',
+  },
+]
+
 export default function App() {
   const [answers, setAnswers] = useState(defaultState)
-  const [bluebikesApi, setBluebikesApi] = useState({
-    status: 'loading',
-    stations: null,
-    lastUpdated: null,
-    error: '',
-  })
+  const [status, setStatus] = useState('idle')
+  const [error, setError] = useState('')
+  const [trip, setTrip] = useState(null)
 
-  const origin = places.find(place => place.id === answers.originId) || places[0]
-  const destination = places.find(place => place.id === answers.destinationId) || places[1]
-  const departure = departureWindows.find(window => window.id === answers.departureId) || departureWindows[0]
-  const stay = stayDurations.find(option => option.id === answers.stayId) || stayDurations[1]
-  const priority = priorityPresets.find(option => option.id === answers.priorityId) || priorityPresets[0]
+  const selectedDeparture = useMemo(
+    () => departureWindows.find(item => item.id === answers.departureId) || departureWindows[0],
+    [answers.departureId],
+  )
+  const selectedPriority = useMemo(
+    () => priorityPresets.find(item => item.id === answers.priorityId) || priorityPresets[0],
+    [answers.priorityId],
+  )
 
   useEffect(() => {
-    let cancelled = false
-
-    async function loadBluebikes() {
-      try {
-        const payload = await fetchBluebikesFromAppApi()
-        if (cancelled) {
-          return
-        }
-
-        setBluebikesApi({
-          status: 'live',
-          stations: payload.stations || null,
-          lastUpdated: payload.lastUpdated || null,
-          error: '',
-        })
-      } catch (error) {
-        if (cancelled) {
-          return
-        }
-
-        setBluebikesApi({
-          status: 'fallback',
-          stations: null,
-          lastUpdated: null,
-          error: error instanceof Error ? error.message : 'Could not load live Bluebikes data.',
-        })
-      }
-    }
-
-    loadBluebikes()
-
-    return () => {
-      cancelled = true
-    }
+    handleCompare()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  const commute = useMemo(
-    () =>
-      estimateCommute({
-        origin,
-        destination,
-        departure,
-        stay,
-        priority,
-        bluebikeStations: bluebikesApi.stations,
-        bluebikeLiveData: bluebikesApi.status === 'live',
-      }),
-    [origin, destination, departure, stay, priority, bluebikesApi.stations, bluebikesApi.status],
-  )
-  const carbonDelta = commute.driving.carbons - commute.recommended.carbons
-  const costDelta = Math.abs(commute.recommended.cost - commute.driving.cost)
-  const timeDelta = Math.abs(commute.recommended.minutes - commute.driving.minutes)
+  async function handleCompare(event) {
+    event?.preventDefault()
+    setStatus('loading')
+    setError('')
+
+    try {
+      const payload = await fetchPointToPointCommute(answers)
+      setTrip(payload)
+      setStatus('ready')
+    } catch (requestError) {
+      setError(
+        requestError instanceof Error
+          ? requestError.message
+          : 'Could not load the live commute comparison.',
+      )
+      setStatus('error')
+    }
+  }
 
   function updateAnswer(key, value) {
     setAnswers(current => ({ ...current, [key]: value }))
@@ -98,27 +88,43 @@ export default function App() {
   function swapTrip() {
     setAnswers(current => ({
       ...current,
-      originId: current.destinationId,
-      destinationId: current.originId,
+      originQuery: current.destinationQuery,
+      destinationQuery: current.originQuery,
     }))
   }
+
+  function applySampleTrip(sample) {
+    setAnswers(current => ({
+      ...current,
+      originQuery: sample.originQuery,
+      destinationQuery: sample.destinationQuery,
+    }))
+  }
+
+  const carbonDelta =
+    trip?.driving && trip?.recommended
+      ? trip.driving.carbons - trip.recommended.carbons
+      : null
+  const costDelta =
+    trip?.driving && trip?.recommended
+      ? Math.abs(trip.recommended.cost - trip.driving.cost)
+      : null
+  const timeDelta =
+    trip?.driving && trip?.recommended
+      ? Math.abs(trip.recommended.minutes - trip.driving.minutes)
+      : null
 
   return (
     <div className={styles.page}>
       <header className={styles.hero}>
         <div className={styles.heroCopy}>
-          <p className={styles.kicker}>Built from scratch, now with live Bluebikes data</p>
-          <h1>Boston commute choices, minus the broken maps setup.</h1>
+          <p className={styles.kicker}>Point-to-point routing with server-side API keys</p>
+          <h1>Live Boston commute routing, not just presets.</h1>
           <p className={styles.heroText}>
-            Pick a start, pick a destination, and this app will estimate time, cost, and
-            carbon across driving, rideshare, the T, bus, walking, biking, and Bluebikes.
+            This branch geocodes two freeform inputs, calls Google Maps Platform on the server for live routes,
+            and combines that with live Bluebikes dock availability for a real point-to-point
+            comparison.
           </p>
-        </div>
-
-        <div className={styles.heroStats}>
-          <QuickStat label="Modes compared" value="7" />
-          <QuickStat label="Boston spots" value={String(places.length)} />
-          <QuickStat label="Setup required" value="0 API keys" />
         </div>
       </header>
 
@@ -126,217 +132,242 @@ export default function App() {
         <section className={styles.panel}>
           <div className={styles.sectionHeader}>
             <div>
-              <p className={styles.stepLabel}>Questionnaire</p>
-              <h2>Set up your trip</h2>
+              <p className={styles.stepLabel}>API Input</p>
+              <h2>Route origin to destination</h2>
             </div>
             <button type="button" className={styles.swapButton} onClick={swapTrip}>
               Swap trip
             </button>
           </div>
 
-          <div className={styles.formGrid}>
-            <SelectQuestion
-              label="Where are you starting?"
-              value={answers.originId}
-              options={places}
-              onChange={value => updateAnswer('originId', value)}
+          <form onSubmit={handleCompare}>
+            <div className={styles.formGrid}>
+              <TextQuestion
+                label="Where are you starting?"
+                value={answers.originQuery}
+                onChange={value => updateAnswer('originQuery', value)}
+              />
+              <TextQuestion
+                label="Where are you going?"
+                value={answers.destinationQuery}
+                onChange={value => updateAnswer('destinationQuery', value)}
+              />
+            </div>
+
+            <datalist id="place-hints">
+              {places.map(place => (
+                <option key={place.id} value={place.name} />
+              ))}
+            </datalist>
+
+            <div className={styles.sampleRow}>
+              {sampleTrips.map(sample => (
+                <button
+                  key={sample.id}
+                  type="button"
+                  className={styles.sampleButton}
+                  onClick={() => applySampleTrip(sample)}
+                >
+                  {sample.label}
+                </button>
+              ))}
+            </div>
+
+            <ChipSection
+              label="When are you leaving?"
+              value={answers.departureId}
+              options={departureWindows}
+              onChange={value => updateAnswer('departureId', value)}
             />
-            <SelectQuestion
-              label="Where are you going?"
-              value={answers.destinationId}
-              options={places}
-              onChange={value => updateAnswer('destinationId', value)}
+
+            <ChipSection
+              label="How long are you staying?"
+              value={answers.stayId}
+              options={stayDurations}
+              onChange={value => updateAnswer('stayId', value)}
             />
-          </div>
 
-          <ChipSection
-            label="When are you leaving?"
-            value={answers.departureId}
-            options={departureWindows}
-            onChange={value => updateAnswer('departureId', value)}
-          />
+            <ChipSection
+              label="What matters most?"
+              value={answers.priorityId}
+              options={priorityPresets}
+              onChange={value => updateAnswer('priorityId', value)}
+            />
 
-          <ChipSection
-            label="How long are you staying?"
-            value={answers.stayId}
-            options={stayDurations}
-            onChange={value => updateAnswer('stayId', value)}
-          />
+            <div className={styles.buttonRow}>
+              <button className={styles.primaryButton} type="submit" disabled={status === 'loading'}>
+                {status === 'loading' ? 'Routing live trip...' : 'Compare live routes'}
+              </button>
+            </div>
+          </form>
 
-          <ChipSection
-            label="What matters most?"
-            value={answers.priorityId}
-            options={priorityPresets}
-            onChange={value => updateAnswer('priorityId', value)}
-          />
-
-          <p className={styles.helperText}>
-            This version uses live Bluebikes station availability when the feed is up, then falls
-            back to local Boston commute assumptions for the rest of the comparison engine.
-          </p>
-
-          <div className={`${styles.apiBanner} ${bluebikesApi.status === 'live' ? styles.apiBannerLive : styles.apiBannerFallback}`}>
+          <div className={`${styles.apiBanner} ${trip ? styles.apiBannerLive : styles.apiBannerFallback}`}>
             <div>
               <p className={styles.apiBannerTitle}>
-                {bluebikesApi.status === 'live'
-                  ? 'Live Bluebikes API connected'
-                  : bluebikesApi.status === 'loading'
-                    ? 'Loading Bluebikes API'
-                    : 'Using fallback Bluebikes data'}
+                {trip ? 'Point-to-point API is active' : 'Point-to-point API needs a key'}
               </p>
               <p className={styles.apiBannerText}>
-                {bluebikesApi.status === 'live'
-                  ? `Dock pairing now uses current bikes and open docks from the official Bluebikes feed${bluebikesApi.lastUpdated ? `, updated ${formatFeedTime(bluebikesApi.lastUpdated)}` : ''}.`
-                  : bluebikesApi.status === 'loading'
-                    ? 'Checking the live Bluebikes feed now.'
-                    : `The live feed was unavailable, so Bluebikes falls back to the local station dataset. ${bluebikesApi.error}`}
+                {trip
+                  ? `Live routing is using Google Maps Platform for ${selectedDeparture.label.toLowerCase()} departure timing and Bluebikes for current dock availability.`
+                  : 'If the form errors, the usual cause is a missing GOOGLE_MAPS_API_KEY or an address that Google could not geocode cleanly.'}
               </p>
             </div>
           </div>
+
+          {error && <div className={styles.errorBox}>{error}</div>}
         </section>
 
-        <section className={styles.recommendation}>
-          <div className={styles.recommendationTop}>
-            <div>
-              <p className={styles.stepLabel}>Recommendation</p>
-              <h2>{commute.recommended.label} is the best fit right now</h2>
-            </div>
-            <span className={styles.priorityBadge}>{priority.label}</span>
-          </div>
+        {trip && (
+          <>
+            <section className={styles.recommendation}>
+              <div className={styles.recommendationTop}>
+                <div>
+                  <p className={styles.stepLabel}>Recommendation</p>
+                  <h2>{trip.recommended.label} is the best fit right now</h2>
+                </div>
+                <span className={styles.priorityBadge}>{selectedPriority.label}</span>
+              </div>
 
-          <p className={styles.recommendationText}>{commute.summary}</p>
+              <p className={styles.recommendationText}>{trip.summary}</p>
 
-          <div className={styles.summaryGrid}>
-            <SummaryMetric label="Trip distance" value={`${commute.distanceMiles.toFixed(1)} mi`} />
-            <SummaryMetric label="Fastest" value={commute.fastest.label} subvalue={formatMinutes(commute.fastest.minutes)} />
-            <SummaryMetric label="Cheapest" value={commute.cheapest.label} subvalue={formatCurrency(commute.cheapest.cost)} />
-            <SummaryMetric label="Lowest carbon" value={commute.cleanest.label} subvalue={formatCarbon(commute.cleanest.carbons)} />
-          </div>
+              <div className={styles.summaryGrid}>
+                <SummaryMetric label="Origin" value={trip.origin.label} />
+                <SummaryMetric label="Destination" value={trip.destination.label} />
+                <SummaryMetric
+                  label="Fastest"
+                  value={trip.fastest.label}
+                  subvalue={formatMinutes(trip.fastest.minutes)}
+                />
+                <SummaryMetric
+                  label="Lowest carbon"
+                  value={trip.cleanest.label}
+                  subvalue={formatCarbon(trip.cleanest.carbons)}
+                />
+              </div>
 
-          <div className={styles.deltaCard}>
-            <p className={styles.deltaEyebrow}>Compared with driving</p>
-            <p className={styles.deltaValue}>
-              {commute.recommended.id === 'driving'
-                ? 'Driving wins this one on your selected priority.'
-                : `${formatCarbon(Math.abs(carbonDelta))} ${carbonDelta >= 0 ? 'less' : 'more'} carbon`}
-            </p>
-            <p className={styles.deltaText}>
-              {commute.recommended.id === 'driving'
-                ? 'The model still shows what you are paying in parking time and tailpipe emissions.'
-                : `${commute.recommended.label} is ${formatMinutes(timeDelta)} ${commute.recommended.minutes <= commute.driving.minutes ? 'faster' : 'slower'} and costs ${formatCurrency(costDelta)} ${commute.recommended.cost <= commute.driving.cost ? 'less' : 'more'}.`}
-            </p>
-          </div>
+              {trip.driving && carbonDelta !== null && costDelta !== null && timeDelta !== null && (
+                <div className={styles.deltaCard}>
+                  <p className={styles.deltaEyebrow}>Compared with driving</p>
+                  <p className={styles.deltaValue}>
+                    {trip.recommended.id === 'driving'
+                      ? 'Driving wins this one on your selected priority.'
+                      : `${formatCarbon(Math.abs(carbonDelta))} ${carbonDelta >= 0 ? 'less' : 'more'} carbon`}
+                  </p>
+                  <p className={styles.deltaText}>
+                    {trip.recommended.id === 'driving'
+                      ? 'The live route still shows what you are paying in parking and emissions.'
+                      : `${trip.recommended.label} is ${formatMinutes(timeDelta)} ${trip.recommended.minutes <= trip.driving.minutes ? 'faster' : 'slower'} and costs ${formatCurrency(costDelta)} ${trip.recommended.cost <= trip.driving.cost ? 'less' : 'more'}.`}
+                  </p>
+                </div>
+              )}
 
-          {destination.ejCommunity && (
-            <div className={styles.ejNote}>
-              <p className={styles.ejLabel}>Air quality context</p>
-              <p>
-                {destination.name} is marked here as an environmental justice community. Extra car
-                trips and parking hunts do not just cost time; they also stack more pollution into
-                streets where health burdens are already uneven.
-              </p>
-            </div>
-          )}
-        </section>
+              {trip.metadata?.liveBluebikes && (
+                <div className={styles.ejNote}>
+                  <p className={styles.ejLabel}>Live feed status</p>
+                  <p>
+                    Bluebikes is using the live GBFS feed here, so the dock pair search is checking
+                    current bikes and open docks rather than only a static station list.
+                  </p>
+                </div>
+              )}
+            </section>
 
-        <section className={styles.resultsSection}>
-          <div className={styles.sectionHeader}>
-            <div>
-              <p className={styles.stepLabel}>Mode Breakdown</p>
-              <h2>Compare every option</h2>
-            </div>
-          </div>
+            <section className={styles.resultsSection}>
+              <div className={styles.sectionHeader}>
+                <div>
+                  <p className={styles.stepLabel}>Mode Breakdown</p>
+                  <h2>Compare every point-to-point option</h2>
+                </div>
+              </div>
 
-          <div className={styles.resultsGrid}>
-            {commute.results.map(result => (
-              <article
-                key={result.id}
-                className={`${styles.modeCard} ${result.id === commute.recommended.id ? styles.modeCardFeatured : ''}`}
-              >
-                <div className={styles.modeTop}>
-                  <div>
-                    <div className={styles.modeTitleRow}>
-                      <span className={styles.modeIcon}>{result.icon}</span>
-                      <h3>{result.label}</h3>
+              <div className={styles.resultsGrid}>
+                {trip.results.map(result => (
+                  <article
+                    key={result.id}
+                    className={`${styles.modeCard} ${result.id === trip.recommended.id ? styles.modeCardFeatured : ''} ${!result.available ? styles.modeCardUnavailable : ''}`}
+                  >
+                    <div className={styles.modeTop}>
+                      <div>
+                        <div className={styles.modeTitleRow}>
+                          <span className={styles.modeIcon}>{result.icon}</span>
+                          <h3>{result.label}</h3>
+                        </div>
+                        <p className={styles.modeBlurb}>{result.blurb}</p>
+                      </div>
+                      {result.id === trip.recommended.id && result.available && <span className={styles.winnerBadge}>Top pick</span>}
                     </div>
-                    <p className={styles.modeBlurb}>{result.blurb}</p>
-                  </div>
-                  {result.id === commute.recommended.id && <span className={styles.winnerBadge}>Top pick</span>}
+
+                    {result.available ? (
+                      <>
+                        <div className={styles.metricList}>
+                          <ModeMetric label="Travel time" value={formatMinutes(result.minutes)} />
+                          <ModeMetric label="Trip cost" value={formatCurrency(result.cost)} />
+                          <ModeMetric label="Carbon" value={formatCarbon(result.carbons)} />
+                        </div>
+
+                        {!!result.tags.length && (
+                          <div className={styles.tagRow}>
+                            {result.tags.map(tag => (
+                              <span key={`${result.id}-${tag}`} className={styles.tag}>
+                                {tag}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                      </>
+                    ) : (
+                      <div className={styles.metricList}>
+                        <ModeMetric label="Status" value="Unavailable" />
+                      </div>
+                    )}
+
+                    <p className={styles.modeNote}>{result.note}</p>
+                  </article>
+                ))}
+              </div>
+            </section>
+
+            <section className={styles.assumptions}>
+              <div className={styles.sectionHeader}>
+                <div>
+                  <p className={styles.stepLabel}>Integration Map</p>
+                  <h2>How the API-key flow is wired</h2>
                 </div>
+              </div>
 
-                <div className={styles.metricList}>
-                  <ModeMetric label="Travel time" value={formatMinutes(result.minutes)} />
-                  <ModeMetric label="Trip cost" value={formatCurrency(result.cost)} />
-                  <ModeMetric label="Carbon" value={formatCarbon(result.carbons)} />
-                </div>
-
-                {!!result.tags.length && (
-                  <div className={styles.tagRow}>
-                    {result.tags.map(tag => (
-                      <span key={`${result.id}-${tag}`} className={styles.tag}>
-                        {tag}
-                      </span>
-                    ))}
-                  </div>
-                )}
-
-                <p className={styles.modeNote}>{result.note}</p>
-              </article>
-            ))}
-          </div>
-        </section>
-
-        <section className={styles.assumptions}>
-          <div className={styles.sectionHeader}>
-            <div>
-              <p className={styles.stepLabel}>How It Works</p>
-              <h2>Simple, transparent assumptions</h2>
-            </div>
-          </div>
-
-          <div className={styles.assumptionGrid}>
-            <InfoCard
-              title="Travel time"
-              body="Estimated from neighborhood-to-neighborhood distance plus time-of-day traffic, wait time, parking hunt, transfer, and station-access multipliers. Bluebikes now searches dock pairs and includes the walking legs before and after the ride."
-            />
-            <InfoCard
-              title="Carbon"
-              body="Driving uses an EPA-style passenger car baseline. Rideshare is modeled higher to reflect empty miles. Walking and personal biking are treated as near-zero operational emissions."
-            />
-            <InfoCard
-              title="Costs"
-              body="Driving blends fuel and destination parking. Transit uses simple fare assumptions. Bluebikes and rideshare use rough trip-cost estimates meant for comparison, not billing."
-            />
-          </div>
-        </section>
+              <div className={styles.assumptionGrid}>
+                <InfoCard
+                  title="1. Client -> /api/commute"
+                  body="The React app posts the origin, destination, departure preset, and stay length to a same-origin endpoint. No Google API key is exposed in the browser."
+                />
+                <InfoCard
+                  title="2. /api/commute -> Google"
+                  body="The server geocodes both points with Google Geocoding and requests live driving, walking, bicycling, rail-transit, and bus-transit routes from Google Directions."
+                />
+                <InfoCard
+                  title="3. Bluebikes layer"
+                  body="The server also loads the official Bluebikes feed, finds nearby origin and destination docks, and scores dock-to-dock routes with walk-bike-walk legs."
+                />
+              </div>
+            </section>
+          </>
+        )}
       </main>
     </div>
   )
 }
 
-function formatFeedTime(unixSeconds) {
-  const timestamp = Number(unixSeconds)
-  if (!Number.isFinite(timestamp)) {
-    return 'recently'
-  }
-
-  return new Date(timestamp * 1000).toLocaleTimeString([], {
-    hour: 'numeric',
-    minute: '2-digit',
-  })
-}
-
-function SelectQuestion({ label, value, options, onChange }) {
+function TextQuestion({ label, value, onChange }) {
   return (
     <label className={styles.question}>
       <span className={styles.questionLabel}>{label}</span>
-      <select className={styles.select} value={value} onChange={event => onChange(event.target.value)}>
-        {options.map(option => (
-          <option key={option.id} value={option.id}>
-            {option.name}
-          </option>
-        ))}
-      </select>
+      <input
+        className={styles.textInput}
+        list="place-hints"
+        value={value}
+        onChange={event => onChange(event.target.value)}
+        placeholder="Type any Boston address, station, or neighborhood"
+      />
     </label>
   )
 }
@@ -359,15 +390,6 @@ function ChipSection({ label, value, options, onChange }) {
           </button>
         ))}
       </div>
-    </div>
-  )
-}
-
-function QuickStat({ label, value }) {
-  return (
-    <div className={styles.quickStat}>
-      <strong>{value}</strong>
-      <span>{label}</span>
     </div>
   )
 }
