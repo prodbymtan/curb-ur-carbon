@@ -22,9 +22,4 @@
 - Adjust for various disabilities and different age groups (for example, suggesting T over walking for elderly)
 
 
-### What if getting to one place was just as safe as is convenient? 
-### A health decision should not be paid by someone else's lungs
-
-
-
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+What if getting to one place was just as safe as is convenient? A health decision should not be paid by someone else's lungs
