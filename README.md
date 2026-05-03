@@ -23,3 +23,5 @@
 
 
 What if getting to one place was just as safe as is convenient? A health decision should not be paid by someone else's lungs
+
+![preview of explore page](https://ibb.co/6RZk189k)
